@@ -4,50 +4,133 @@
 <meta charset="UTF-8">
 <title>Checklist de Frota</title>
 
+<!-- XLSX para importar / exportar Excel -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <style>
-body { font-family: Arial; background:#f4f6f8; padding:20px }
-table { width:100%; background:#fff; border-collapse:collapse }
-th,td { padding:8px; border-bottom:1px solid #ddd; text-align:center }
-th { background:#1f2937; color:#fff }
-button { padding:6px 10px; cursor:pointer }
-.status.ok{color:green;font-weight:bold}
-.status.warning{color:orange;font-weight:bold}
-.status.danger{color:red;font-weight:bold}
-.dashboard{display:flex;gap:15px;margin-bottom:15px}
-.card{background:#fff;padding:12px;flex:1;text-align:center;border-radius:6px}
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+body {
+  background-color: #f4f6f8;
+  color: #333;
+  padding: 20px;
+}
+
+.header {
+  background: #1f2937;
+  color: #fff;
+  padding: 20px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+}
+
+.dashboard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  box-shadow: 0 4px 8px rgba(0,0,0,.08);
+}
+
+.card span {
+  font-size: 26px;
+  font-weight: bold;
+}
+
+.card.total { border-left: 6px solid #3b82f6; }
+.card.ok { border-left: 6px solid #22c55e; }
+.card.warning { border-left: 6px solid #facc15; }
+.card.danger { border-left: 6px solid #ef4444; }
+
+.filters {
+  background: #fff;
+  padding: 15px;
+  border-radius: 10px;
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.filters input, .filters select {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+}
+
+button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: #1f2937;
+  color: #fff;
+  cursor: pointer;
+}
+
+.table-container {
+  background: #fff;
+  padding: 15px;
+  border-radius: 10px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.status.ok { color: #22c55e; font-weight: bold; }
+.status.warning { color: #facc15; font-weight: bold; }
+.status.danger { color: #ef4444; font-weight: bold; }
 </style>
 </head>
 
 <body>
 
-<h2>Checklist da Frota</h2>
+<div class="header">
+  <h2>Checklist Mensal da Frota</h2>
+</div>
 
 <div class="dashboard">
-  <div class="card">Total<br><b id="total">0</b></div>
-  <div class="card">Em dia<br><b id="emdia">0</b></div>
-  <div class="card">Pendente<br><b id="pendente">0</b></div>
-  <div class="card">Vencido<br><b id="vencido">0</b></div>
+  <div class="card total">Total<br><span id="total">0</span></div>
+  <div class="card ok">Em dia<br><span id="emdia">0</span></div>
+  <div class="card warning">Pendentes<br><span id="pendente">0</span></div>
+  <div class="card danger">Vencidos<br><span id="vencido">0</span></div>
 </div>
-  <h3>Cadastrar placa</h3>
 
-<input type="text" id="placaInput" placeholder="Placa (ex: ABC1D23)">
-<select id="tipoInput">
-  <option value="">Tipo</option>
-  <option value="Truck">Truck</option>
-  <option value="Carreta">Carreta</option>
-  <option value="VUC">VUC</option>
-  <option value="Outro">Outro</option>
-</select>
-<button onclick="cadastrarPlaca()">Cadastrar</button>
+<div class="filters">
+  <input id="placaInput" placeholder="Placa (ABC1D23)">
+  <select id="tipoInput">
+    <option value="">Tipo</option>
+    <option>Truck</option>
+    <option>Carreta</option>
+    <option>VUC</option>
+  </select>
+  <button onclick="cadastrarPlaca()">Cadastrar placa</button>
 
-<hr>
+  <input type="file" id="excelInput">
+  <button onclick="exportarExcel()">Exportar Excel</button>
+</div>
 
-
-<input type="file" id="excelInput" />
-<button onclick="exportarExcel()">Exportar Excel</button>
-
+<div class="table-container">
 <table>
 <thead>
 <tr>
@@ -60,41 +143,9 @@ button { padding:6px 10px; cursor:pointer }
 </thead>
 <tbody id="tabela"></tbody>
 </table>
+</div>
 
 <script type="module">
-  /* CADASTRAR PLACA MANUAL */
-window.cadastrarPlaca = async function () {
-  const placa = document.getElementById('placaInput').value.trim().toUpperCase();
-  const tipo = document.getElementById('tipoInput').value;
-
-  if (!placa || !tipo) {
-    alert('Preencha placa e tipo');
-    return;
-  }
-
-  // Evitar placa duplicada
-  const q = query(
-    collection(db, 'placas'),
-    where('placa', '==', placa)
-  );
-
-  const snap = await getDocs(q);
-  if (!snap.empty) {
-    alert('Placa já cadastrada');
-    return;
-  }
-
-  await addDoc(collection(db, 'placas'), {
-    placa,
-    tipo
-  });
-
-  document.getElementById('placaInput').value = '';
-  document.getElementById('tipoInput').value = '';
-
-  alert('Placa cadastrada com sucesso!');
-};
-
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import {
   getFirestore, collection, addDoc, getDocs,
@@ -110,6 +161,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+/* STATUS */
 function statusChecklist(data){
   const hoje=new Date();hoje.setHours(0,0,0,0);
   const d=new Date(data);d.setHours(0,0,0,0);
@@ -119,77 +171,73 @@ function statusChecklist(data){
   return ['Em dia','ok'];
 }
 
-/* ⛔ BLOQUEIO DE DUPLICADO */
-window.salvarChecklist = async (placa)=>{
-  const hoje=new Date();hoje.setHours(0,0,0,0);
-  const q=query(collection(db,'checklists'),
-    where('placa','==',placa),
-    where('dataChecklist','==',hoje.toISOString().slice(0,10))
-  );
-  const snap=await getDocs(q);
-  if(!snap.empty){
-    alert('Checklist já feito hoje!');
-    return;
-  }
-  await addDoc(collection(db,'checklists'),{
-    placa,
-    dataChecklist:hoje.toISOString().slice(0,10)
-  });
-  alert('Checklist registrado!');
+/* CADASTRAR PLACA */
+window.cadastrarPlaca = async ()=>{
+  const placa = placaInput.value.trim().toUpperCase();
+  const tipo = tipoInput.value;
+  if(!placa || !tipo) return alert('Preencha placa e tipo');
+
+  const q=query(collection(db,'placas'),where('placa','==',placa));
+  if(!(await getDocs(q)).empty) return alert('Placa já cadastrada');
+
+  await addDoc(collection(db,'placas'),{placa,tipo});
+  placaInput.value=''; tipoInput.value='';
 };
 
-/* 📥 IMPORTAR EXCEL */
-document.getElementById('excelInput').addEventListener('change', async(e)=>{
-  const data=await e.target.files[0].arrayBuffer();
-  const wb=XLSX.read(data);
-  const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-  rows.forEach(r=>{
-    addDoc(collection(db,'placas'),{
-      placa:r.placa,
-      tipo:r.tipo
-    });
-  });
-  alert('Placas importadas!');
-});
+/* CHECKLIST 1 CLIQUE (BLOQUEIO DUPLICADO) */
+window.salvarChecklist = async (placa)=>{
+  const hoje=new Date();hoje.setHours(0,0,0,0);
+  const data=hoje.toISOString().slice(0,10);
+  const q=query(collection(db,'checklists'),
+    where('placa','==',placa),
+    where('dataChecklist','==',data)
+  );
+  if(!(await getDocs(q)).empty) return alert('Checklist já feito hoje');
 
-/* 📤 EXPORTAR EXCEL */
+  await addDoc(collection(db,'checklists'),{placa,dataChecklist:data});
+};
+
+/* IMPORTAR EXCEL */
+excelInput.onchange = async e=>{
+  const wb=XLSX.read(await e.target.files[0].arrayBuffer());
+  XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]])
+    .forEach(r=>addDoc(collection(db,'placas'),r));
+};
+
+/* EXPORTAR EXCEL */
 window.exportarExcel = async ()=>{
-  const placas=[];
-  const snap=await getDocs(collection(db,'placas'));
-  snap.forEach(d=>placas.push(d.data()));
-  const ws=XLSX.utils.json_to_sheet(placas);
+  const dados=[];
+  (await getDocs(collection(db,'placas'))).forEach(d=>dados.push(d.data()));
+  const ws=XLSX.utils.json_to_sheet(dados);
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Placas');
+  XLSX.utils.book_append_sheet(wb,ws,'Frota');
   XLSX.writeFile(wb,'frota.xlsx');
 };
 
-/* CARREGAR TABELA */
-const tbody=document.getElementById('tabela');
-onSnapshot(collection(db,'placas'), placasSnap=>{
-  tbody.innerHTML='';
-  document.getElementById('total').innerText=placasSnap.size;
+/* TABELA */
+onSnapshot(collection(db,'placas'), snap=>{
+  tabela.innerHTML='';
+  total.innerText=snap.size;
+  let e=0,p=0,v=0;
 
-  placasSnap.forEach(p=>{
-    onSnapshot(
-      query(collection(db,'checklists'),where('placa','==',p.data().placa)),
-      snap=>{
-        let ultima=null;
-        snap.forEach(c=>{
-          const d=new Date(c.data().dataChecklist);
-          if(!ultima||d>ultima)ultima=d;
-        });
-        const [txt,cls]=ultima?statusChecklist(ultima):['Pendente','warning'];
-        tbody.innerHTML+=`
-        <tr>
-          <td>${p.data().placa}</td>
-          <td>${p.data().tipo}</td>
-          <td>${ultima?ultima.toLocaleDateString():'-'}</td>
-          <td class="status ${cls}">${txt}</td>
-          <td><button onclick="salvarChecklist('${p.data().placa}')">Checklist</button></td>
-        </tr>`;
-      }
-    );
+  snap.forEach(pDoc=>{
+    onSnapshot(query(collection(db,'checklists'),where('placa','==',pDoc.data().placa)), s=>{
+      let u=null;
+      s.forEach(c=>{const d=new Date(c.data().dataChecklist);if(!u||d>u)u=d});
+      const [t,c]=u?statusChecklist(u):['Pendente','warning'];
+      if(t==='Em dia')e++; if(t==='Pendente')p++; if(t==='Vencido')v++;
+      tabela.innerHTML+=`
+      <tr>
+        <td>${pDoc.data().placa}</td>
+        <td>${pDoc.data().tipo}</td>
+        <td>${u?u.toLocaleDateString():'-'}</td>
+        <td class="status ${c}">${t}</td>
+        <td><button onclick="salvarChecklist('${pDoc.data().placa}')">Checklist</button></td>
+      </tr>`;
+    });
   });
+
+  emdia.innerText=e; pendente.innerText=p; vencido.innerText=v;
 });
 </script>
 
