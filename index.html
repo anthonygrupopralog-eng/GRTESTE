@@ -30,6 +30,20 @@ button { padding:6px 10px; cursor:pointer }
   <div class="card">Pendente<br><b id="pendente">0</b></div>
   <div class="card">Vencido<br><b id="vencido">0</b></div>
 </div>
+  <h3>Cadastrar placa</h3>
+
+<input type="text" id="placaInput" placeholder="Placa (ex: ABC1D23)">
+<select id="tipoInput">
+  <option value="">Tipo</option>
+  <option value="Truck">Truck</option>
+  <option value="Carreta">Carreta</option>
+  <option value="VUC">VUC</option>
+  <option value="Outro">Outro</option>
+</select>
+<button onclick="cadastrarPlaca()">Cadastrar</button>
+
+<hr>
+
 
 <input type="file" id="excelInput" />
 <button onclick="exportarExcel()">Exportar Excel</button>
