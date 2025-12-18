@@ -87,125 +87,139 @@ tbody tr:hover{background:#f9fafb}
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import {
   getFirestore, collection, addDoc, getDocs,
-  onSnapshot, query, where
+  query, where, onSnapshot
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 
+/* 🔥 FIREBASE */
 const firebaseConfig = {
   apiKey: "AIzaSyB61mrR6417ECkuUCsbBqLU3KQ_hepXiQs",
   authDomain: "check-list-d32b1.firebaseapp.com",
-  projectId: "check-list-d32b1"
+  projectId: "check-list-d32b1",
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-/* CADASTRAR PLACA */
-window.cadastrarPlaca = async ()=>{
+/* 📌 ELEMENTOS */
+const placaInput = document.getElementById("placaInput");
+const tipoInput = document.getElementById("tipoInput");
+const btnCadastrar = document.getElementById("btnCadastrar");
+const tabelaBody = document.querySelector("tbody");
+
+const totalEl = document.getElementById("total");
+const okEl = document.getElementById("ok");
+const pendenteEl = document.getElementById("pendente");
+const vencidoEl = document.getElementById("vencido");
+
+/* 🚗 CADASTRAR PLACA */
+btnCadastrar.onclick = async () => {
   const placa = placaInput.value.trim().toUpperCase();
   const tipo = tipoInput.value;
-  if(!placa || !tipo) return alert('Preencha placa e tipo');
 
-  const q = query(collection(db,'placas'), where('placa','==',placa));
-  if(!(await getDocs(q)).empty) return alert('Placa já cadastrada');
-
-  await addDoc(collection(db,'placas'), { placa, tipo });
-  placaInput.value=''; tipoInput.value='';
-};
-
-/* CHECKLIST */
-window.salvarChecklist = async placa=>{
-  const hoje = new Date();
-  hoje.setHours(0,0,0,0);
-  const data = hoje.toISOString().slice(0,10);
-
-  const q = query(
-    collection(db,'checklists'),
-    where('placa','==',placa),
-    where('dataChecklist','==',data)
-  );
-
-  if(!(await getDocs(q)).empty) {
-    alert('Checklist já feito hoje');
+  if (!placa || !tipo) {
+    alert("Preencha placa e tipo");
     return;
   }
 
-  await addDoc(collection(db,'checklists'), { placa, dataChecklist:data });
+  const q = query(collection(db, "placas"), where("placa", "==", placa));
+  if (!(await getDocs(q)).empty) {
+    alert("Placa já cadastrada");
+    return;
+  }
+
+  await addDoc(collection(db, "placas"), { placa, tipo });
+  placaInput.value = "";
 };
 
-/* IMPORTAR EXCEL */
-excelInput.onchange = async e=>{
-  const wb = XLSX.read(await e.target.files[0].arrayBuffer());
-  const dados = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-  for(const d of dados) await addDoc(collection(db,'placas'), d);
-};
+/* 📆 STATUS */
+function calcularStatus(data) {
+  if (!data) return { texto: "Pendente", classe: "warning" };
 
-/* EXPORTAR EXCEL */
-window.exportarExcel = async ()=>{
-  const arr=[];
-  (await getDocs(collection(db,'placas'))).forEach(d=>arr.push(d.data()));
-  const ws=XLSX.utils.json_to_sheet(arr);
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Frota');
-  XLSX.writeFile(wb,'frota.xlsx');
-};
+  const hoje = new Date();
+  hoje.setHours(0,0,0,0);
 
-/* RENDER ÚNICO */
-async function renderizarTabela(){
-  tabela.innerHTML='';
+  const check = new Date(data);
+  check.setHours(0,0,0,0);
 
-  const placasSnap = await getDocs(collection(db,'placas'));
-  const checkSnap = await getDocs(collection(db,'checklists'));
+  const diff = Math.floor((hoje - check) / (1000*60*60*24));
 
-  const mapa={};
-  checkSnap.forEach(d=>{
-    const { placa, dataChecklist } = d.data();
-    const dt = new Date(dataChecklist);
-    if(!mapa[placa] || dt > mapa[placa]) mapa[placa] = dt;
+  if (diff < 30) return { texto: "Em dia", classe: "ok" };
+  if (diff === 30) return { texto: "Pendente", classe: "warning" };
+  return { texto: "Vencido", classe: "danger" };
+}
+
+/* 🖥️ RENDER */
+async function renderizar() {
+  tabelaBody.innerHTML = "";
+
+  let total=0, ok=0, pend=0, venc=0;
+
+  const placasSnap = await getDocs(collection(db,"placas"));
+  const checksSnap = await getDocs(collection(db,"checklists"));
+
+  const checks = {};
+  checksSnap.forEach(d=>{
+    const c=d.data();
+    if(!checks[c.placa] || checks[c.placa]<c.dataChecklist){
+      checks[c.placa]=c.dataChecklist;
+    }
   });
-
-  let e=0,p=0,v=0;
 
   placasSnap.forEach(doc=>{
     const { placa, tipo } = doc.data();
-    const ultima = mapa[placa];
+    total++;
 
-    let status='Pendente', cls='warning', dataTxt='-';
+    const data = checks[placa] || null;
+    const st = calcularStatus(data);
 
-    if(ultima){
-      const hoje=new Date();hoje.setHours(0,0,0,0);
-      ultima.setHours(0,0,0,0);
-      const dias=(hoje-ultima)/86400000;
-      dataTxt=ultima.toLocaleDateString();
+    if (st.texto==="Em dia") ok++;
+    else if (st.texto==="Pendente") pend++;
+    else venc++;
 
-      if(dias < 30){ status='Em dia'; cls='ok'; e++; }
-      else if(dias === 30){ status='Pendente'; cls='warning'; p++; }
-      else{ status='Vencido'; cls='danger'; v++; }
-    } else p++;
-
-    tabela.innerHTML+=`
+    tabelaBody.innerHTML += `
       <tr>
         <td>${placa}</td>
         <td class="center">${tipo}</td>
-        <td class="center">${dataTxt}</td>
-        <td class="center status ${cls}">${status}</td>
+        <td class="center">${data ? data.split("-").reverse().join("/") : "-"}</td>
+        <td class="center status ${st.classe}">${st.texto}</td>
         <td class="center">
           <button onclick="salvarChecklist('${placa}')">Checklist</button>
         </td>
       </tr>`;
   });
 
-  total.innerText = placasSnap.size;
-  emdia.innerText = e;
-  pendente.innerText = p;
-  vencido.innerText = v;
+  totalEl.innerText=total;
+  okEl.innerText=ok;
+  pendenteEl.innerText=pend;
+  vencidoEl.innerText=venc;
 }
 
-/* ÚNICO LISTENER (ANTI-FANTASMA) */
-onSnapshot(collection(db,'checklists'), renderizarTabela);
+/* ✅ CHECKLIST */
+window.salvarChecklist = async placa=>{
+  const hoje = new Date();
+  hoje.setHours(0,0,0,0);
+  const data = hoje.toISOString().slice(0,10);
 
-/* PRIMEIRA CARGA */
-renderizarTabela();
+  const q = query(
+    collection(db,"checklists"),
+    where("placa","==",placa),
+    where("dataChecklist","==",data)
+  );
+
+  if (!(await getDocs(q)).empty) {
+    alert("Checklist já feito hoje");
+    return;
+  }
+
+  await addDoc(collection(db,"checklists"),{
+    placa,
+    dataChecklist:data
+  });
+};
+
+/* 🔁 ÚNICO LISTENER */
+onSnapshot(collection(db,"placas"), renderizar);
+onSnapshot(collection(db,"checklists"), renderizar);
 </script>
-
 </body>
 </html>
