@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Checklist de Frota</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+body { font-family: Arial; background:#f4f6f8; padding:20px }
+table { width:100%; background:#fff; border-collapse:collapse }
+th,td { padding:8px; border-bottom:1px solid #ddd; text-align:center }
+th { background:#1f2937; color:#fff }
+button { padding:6px 10px; cursor:pointer }
+.status.ok{color:green;font-weight:bold}
+.status.warning{color:orange;font-weight:bold}
+.status.danger{color:red;font-weight:bold}
+.dashboard{display:flex;gap:15px;margin-bottom:15px}
+.card{background:#fff;padding:12px;flex:1;text-align:center;border-radius:6px}
+</style>
+</head>
+
+<body>
+
+<h2>Checklist da Frota</h2>
+
+<div class="dashboard">
+  <div class="card">Total<br><b id="total">0</b></div>
+  <div class="card">Em dia<br><b id="emdia">0</b></div>
+  <div class="card">Pendente<br><b id="pendente">0</b></div>
+  <div class="card">Vencido<br><b id="vencido">0</b></div>
+</div>
+
+<input type="file" id="excelInput" />
+<button onclick="exportarExcel()">Exportar Excel</button>
+
+<table>
+<thead>
+<tr>
+  <th>Placa</th>
+  <th>Tipo</th>
+  <th>Último Checklist</th>
+  <th>Status</th>
+  <th>Ação</th>
+</tr>
+</thead>
+<tbody id="tabela"></tbody>
+</table>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+import {
+  getFirestore, collection, addDoc, getDocs,
+  onSnapshot, query, where
+} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyB61mrR6417ECkuUCsbBqLU3KQ_hepXiQs",
+  authDomain: "check-list-d32b1.firebaseapp.com",
+  projectId: "check-list-d32b1"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+function statusChecklist(data){
+  const hoje=new Date();hoje.setHours(0,0,0,0);
+  const d=new Date(data);d.setHours(0,0,0,0);
+  const diff=(hoje-d)/86400000;
+  if(diff>30) return ['Vencido','danger'];
+  if(diff===30) return ['Pendente','warning'];
+  return ['Em dia','ok'];
+}
+
+/* ⛔ BLOQUEIO DE DUPLICADO */
+window.salvarChecklist = async (placa)=>{
+  const hoje=new Date();hoje.setHours(0,0,0,0);
+  const q=query(collection(db,'checklists'),
+    where('placa','==',placa),
+    where('dataChecklist','==',hoje.toISOString().slice(0,10))
+  );
+  const snap=await getDocs(q);
+  if(!snap.empty){
+    alert('Checklist já feito hoje!');
+    return;
+  }
+  await addDoc(collection(db,'checklists'),{
+    placa,
+    dataChecklist:hoje.toISOString().slice(0,10)
+  });
+  alert('Checklist registrado!');
+};
+
+/* 📥 IMPORTAR EXCEL */
+document.getElementById('excelInput').addEventListener('change', async(e)=>{
+  const data=await e.target.files[0].arrayBuffer();
+  const wb=XLSX.read(data);
+  const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+  rows.forEach(r=>{
+    addDoc(collection(db,'placas'),{
+      placa:r.placa,
+      tipo:r.tipo
+    });
+  });
+  alert('Placas importadas!');
+});
+
+/* 📤 EXPORTAR EXCEL */
+window.exportarExcel = async ()=>{
+  const placas=[];
+  const snap=await getDocs(collection(db,'placas'));
+  snap.forEach(d=>placas.push(d.data()));
+  const ws=XLSX.utils.json_to_sheet(placas);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Placas');
+  XLSX.writeFile(wb,'frota.xlsx');
+};
+
+/* CARREGAR TABELA */
+const tbody=document.getElementById('tabela');
+onSnapshot(collection(db,'placas'), placasSnap=>{
+  tbody.innerHTML='';
+  document.getElementById('total').innerText=placasSnap.size;
+
+  placasSnap.forEach(p=>{
+    onSnapshot(
+      query(collection(db,'checklists'),where('placa','==',p.data().placa)),
+      snap=>{
+        let ultima=null;
+        snap.forEach(c=>{
+          const d=new Date(c.data().dataChecklist);
+          if(!ultima||d>ultima)ultima=d;
+        });
+        const [txt,cls]=ultima?statusChecklist(ultima):['Pendente','warning'];
+        tbody.innerHTML+=`
+        <tr>
+          <td>${p.data().placa}</td>
+          <td>${p.data().tipo}</td>
+          <td>${ultima?ultima.toLocaleDateString():'-'}</td>
+          <td class="status ${cls}">${txt}</td>
+          <td><button onclick="salvarChecklist('${p.data().placa}')">Checklist</button></td>
+        </tr>`;
+      }
+    );
+  });
+});
+</script>
+
+</body>
+</html>
