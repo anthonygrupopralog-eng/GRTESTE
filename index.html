@@ -112,7 +112,8 @@ const pendenteEl = document.getElementById("pendente");
 const vencidoEl = document.getElementById("vencido");
 
 /* 🚗 CADASTRAR PLACA */
-btnCadastrar.onclick = async () => {
+btnCadastrar.onclick = async (e) => {
+  e.preventDefault();
   const placa = placaInput.value.trim().toUpperCase();
   const tipo = tipoInput.value;
 
