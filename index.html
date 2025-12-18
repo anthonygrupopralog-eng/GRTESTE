@@ -1,14 +1,12 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+<meta charset="UTF-8">
+<title>Checklist de Frota</title>
 <link rel="icon" href="https://www.pralog.com.br/wp-content/uploads/2025/07/cropped-pralogverde-scaled-e1752780666907-32x32.png" sizes="32x32">
 <link rel="icon" href="https://www.pralog.com.br/wp-content/uploads/2025/07/cropped-pralogverde-scaled-e1752780666907-192x192.png" sizes="192x192">
 <link rel="apple-touch-icon" href="https://www.pralog.com.br/wp-content/uploads/2025/07/cropped-pralogverde-scaled-e1752780666907-180x180.png">
 <meta name="msapplication-TileImage" content="https://www.pralog.com.br/wp-content/uploads/2025/07/cropped-pralogverde-scaled-e1752780666907-270x270.png">
-
-<meta charset="UTF-8">
-<title>Checklist de Frota</title>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <style>
@@ -22,13 +20,11 @@ body{background:#f4f6f8;color:#333;padding:20px}
 .card.ok{border-left:6px solid #22c55e}
 .card.warning{border-left:6px solid #facc15}
 .card.danger{border-left:6px solid #ef4444}
-
 .filters{background:#fff;padding:15px;border-radius:10px;display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
 .filters input,.filters select{padding:10px;border-radius:8px;border:1px solid #d1d5db}
-
 button{padding:8px 18px;border:none;border-radius:10px;background:#111827;color:#fff;cursor:pointer}
 button:hover{background:#1f2937}
-
+button:disabled{opacity:.9}
 .table-container{background:#fff;padding:15px;border-radius:10px}
 table{width:100%;border-collapse:collapse}
 th,td{padding:12px;border-bottom:1px solid #e5e7eb}
@@ -49,7 +45,7 @@ tbody tr:hover{background:#f9fafb}
 
 <div class="dashboard">
   <div class="card total">Total<br><span id="total">0</span></div>
-  <div class="card ok">Em dia<br><span id="emdia">0</span></div>
+  <div class="card ok">Em dia<br><span id="ok">0</span></div>
   <div class="card warning">Pendentes<br><span id="pendente">0</span></div>
   <div class="card danger">Vencidos<br><span id="vencido">0</span></div>
 </div>
@@ -62,25 +58,25 @@ tbody tr:hover{background:#f9fafb}
     <option>Carreta</option>
     <option>VUC</option>
   </select>
-<button id="btnCadastrar" type="button">Cadastrar</button>
+  <button id="btnCadastrar">Cadastrar</button>
 
   <input type="file" id="excelInput">
   <button onclick="exportarExcel()">Exportar Excel</button>
 </div>
 
 <div class="table-container">
-<table>
-<thead>
-<tr>
-  <th>Placa</th>
-  <th class="center">Tipo</th>
-  <th class="center">Último Checklist</th>
-  <th class="center">Status</th>
-  <th class="center">Ação</th>
-</tr>
-</thead>
-<tbody id="tabela"></tbody>
-</table>
+  <table>
+    <thead>
+      <tr>
+        <th>Placa</th>
+        <th class="center">Tipo</th>
+        <th class="center">Último Checklist</th>
+        <th class="center">Status</th>
+        <th class="center">Ação</th>
+      </tr>
+    </thead>
+    <tbody id="tabela"></tbody>
+  </table>
 </div>
 
 <script type="module">
@@ -104,12 +100,42 @@ const db = getFirestore(app);
 const placaInput = document.getElementById("placaInput");
 const tipoInput = document.getElementById("tipoInput");
 const btnCadastrar = document.getElementById("btnCadastrar");
-const tabelaBody = document.querySelector("tbody");
+const tabelaBody = document.getElementById("tabela");
 
 const totalEl = document.getElementById("total");
 const okEl = document.getElementById("ok");
 const pendenteEl = document.getElementById("pendente");
 const vencidoEl = document.getElementById("vencido");
+
+/* =========================
+   🔁 RENDER SEM DUPLICAR
+   (debounce + evita render concorrente)
+========================= */
+let renderTimeout;
+let isRendering = false;
+let rerenderRequested = false;
+
+async function renderizarSeguro() {
+  if (isRendering) {
+    rerenderRequested = true;
+    return;
+  }
+  isRendering = true;
+  try {
+    await renderizar();
+  } finally {
+    isRendering = false;
+    if (rerenderRequested) {
+      rerenderRequested = false;
+      await renderizarSeguro();
+    }
+  }
+}
+
+function agendarRender() {
+  clearTimeout(renderTimeout);
+  renderTimeout = setTimeout(renderizarSeguro, 120);
+}
 
 /* 🚗 CADASTRAR PLACA */
 btnCadastrar.onclick = async (e) => {
@@ -129,7 +155,14 @@ btnCadastrar.onclick = async (e) => {
   }
 
   await addDoc(collection(db, "placas"), { placa, tipo });
+
   placaInput.value = "";
+  tipoInput.value = "";
+
+  // Atualiza na hora e mostra o alerta
+  await renderizarSeguro();
+  alert("✅ Placa cadastrada com sucesso!");
+  placaInput.focus();
 };
 
 /* 📆 STATUS */
@@ -137,12 +170,12 @@ function calcularStatus(data) {
   if (!data) return { texto: "Pendente", classe: "warning" };
 
   const hoje = new Date();
-  hoje.setHours(0,0,0,0);
+  hoje.setHours(0, 0, 0, 0);
 
   const check = new Date(data);
-  check.setHours(0,0,0,0);
+  check.setHours(0, 0, 0, 0);
 
-  const diff = Math.floor((hoje - check) / (1000*60*60*24));
+  const diff = Math.floor((hoje - check) / (1000 * 60 * 60 * 24));
 
   if (diff < 30) return { texto: "Em dia", classe: "ok" };
   if (diff === 30) return { texto: "Pendente", classe: "warning" };
@@ -153,29 +186,35 @@ function calcularStatus(data) {
 async function renderizar() {
   tabelaBody.innerHTML = "";
 
-  let total=0, ok=0, pend=0, venc=0;
+  let total = 0, ok = 0, pend = 0, venc = 0;
 
-  const placasSnap = await getDocs(collection(db,"placas"));
-  const checksSnap = await getDocs(collection(db,"checklists"));
+  const [placasSnap, checksSnap] = await Promise.all([
+    getDocs(collection(db, "placas")),
+    getDocs(collection(db, "checklists"))
+  ]);
 
   const checks = {};
-  checksSnap.forEach(d=>{
-    const c=d.data();
-    if(!checks[c.placa] || checks[c.placa]<c.dataChecklist){
-      checks[c.placa]=c.dataChecklist;
+  checksSnap.forEach((d) => {
+    const c = d.data();
+    if (!checks[c.placa] || checks[c.placa] < c.dataChecklist) {
+      checks[c.placa] = c.dataChecklist;
     }
   });
 
-  placasSnap.forEach(doc=>{
+  const hojeISO = new Date().toISOString().slice(0, 10);
+
+  placasSnap.forEach((doc) => {
     const { placa, tipo } = doc.data();
     total++;
 
     const data = checks[placa] || null;
     const st = calcularStatus(data);
 
-    if (st.texto==="Em dia") ok++;
-    else if (st.texto==="Pendente") pend++;
+    if (st.texto === "Em dia") ok++;
+    else if (st.texto === "Pendente") pend++;
     else venc++;
+
+    const feitoHoje = data === hojeISO;
 
     tabelaBody.innerHTML += `
       <tr>
@@ -184,43 +223,79 @@ async function renderizar() {
         <td class="center">${data ? data.split("-").reverse().join("/") : "-"}</td>
         <td class="center status ${st.classe}">${st.texto}</td>
         <td class="center">
-          <button onclick="salvarChecklist('${placa}')">Checklist</button>
+          <button
+            ${feitoHoje ? 'disabled style="background:#16a34a;cursor:default;"' : ''}
+            onclick="salvarChecklist('${placa}', this)">
+            ${feitoHoje ? "✔ Feito" : "Checklist"}
+          </button>
         </td>
       </tr>`;
   });
 
-  totalEl.innerText=total;
-  okEl.innerText=ok;
-  pendenteEl.innerText=pend;
-  vencidoEl.innerText=venc;
+  totalEl.innerText = total;
+  okEl.innerText = ok;
+  pendenteEl.innerText = pend;
+  vencidoEl.innerText = venc;
 }
 
 /* ✅ CHECKLIST */
-window.salvarChecklist = async placa=>{
-  const hoje = new Date();
-  hoje.setHours(0,0,0,0);
-  const data = hoje.toISOString().slice(0,10);
+window.salvarChecklist = async (placa, botao) => {
+  try {
+    botao.disabled = true;
+    botao.textContent = "Salvando...";
+    botao.style.background = "#f59e0b";
+    botao.style.cursor = "default";
 
-  const q = query(
-    collection(db,"checklists"),
-    where("placa","==",placa),
-    where("dataChecklist","==",data)
-  );
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const data = hoje.toISOString().slice(0, 10);
 
-  if (!(await getDocs(q)).empty) {
-    alert("Checklist já feito hoje");
-    return;
+    const q = query(
+      collection(db, "checklists"),
+      where("placa", "==", placa),
+      where("dataChecklist", "==", data)
+    );
+
+    if (!(await getDocs(q)).empty) {
+      alert("Checklist já feito hoje");
+      await renderizarSeguro();
+      return;
+    }
+
+    await addDoc(collection(db, "checklists"), {
+      placa,
+      dataChecklist: data,
+    });
+
+    await renderizarSeguro(); // atualiza na hora
+
+    // feedback visual imediato
+    botao.textContent = "✔ Feito";
+    botao.style.background = "#16a34a";
+    botao.disabled = true;
+  } catch (e) {
+    console.error("Erro ao salvar checklist:", e);
+    alert("Erro ao salvar checklist!");
+    if (botao) {
+      botao.disabled = false;
+      botao.textContent = "Checklist";
+      botao.style.background = "#111827";
+      botao.style.cursor = "pointer";
+    }
   }
-
-  await addDoc(collection(db,"checklists"),{
-    placa,
-    dataChecklist:data
-  });
 };
 
-/* 🔁 ÚNICO LISTENER */
-onSnapshot(collection(db,"placas"), renderizar);
-onSnapshot(collection(db,"checklists"), renderizar);
+/* 🔁 ATUALIZAÇÃO AUTOMÁTICA (placas + checklists) */
+onSnapshot(collection(db, "placas"), agendarRender);
+onSnapshot(collection(db, "checklists"), agendarRender);
+
+// primeira carga
+agendarRender();
+
+/* evita erro se exportarExcel não existir ainda */
+window.exportarExcel = window.exportarExcel || function () {
+  alert("Função exportarExcel() ainda não foi implementada.");
+};
 </script>
 </body>
 </html>
