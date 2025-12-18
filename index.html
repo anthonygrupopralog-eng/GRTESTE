@@ -101,38 +101,42 @@ const db = getFirestore(app);
 
 /* CADASTRAR PLACA */
 window.cadastrarPlaca = async ()=>{
-  const placa=placaInput.value.trim().toUpperCase();
-  const tipo=tipoInput.value;
-  if(!placa||!tipo) return alert('Preencha placa e tipo');
+  const placa = placaInput.value.trim().toUpperCase();
+  const tipo = tipoInput.value;
+  if(!placa || !tipo) return alert('Preencha placa e tipo');
 
-  const q=query(collection(db,'placas'),where('placa','==',placa));
+  const q = query(collection(db,'placas'), where('placa','==',placa));
   if(!(await getDocs(q)).empty) return alert('Placa já cadastrada');
 
-  await addDoc(collection(db,'placas'),{placa,tipo});
+  await addDoc(collection(db,'placas'), { placa, tipo });
   placaInput.value=''; tipoInput.value='';
 };
 
 /* CHECKLIST */
 window.salvarChecklist = async placa=>{
-  const hoje=new Date();hoje.setHours(0,0,0,0);
-  const data=hoje.toISOString().slice(0,10);
+  const hoje = new Date();
+  hoje.setHours(0,0,0,0);
+  const data = hoje.toISOString().slice(0,10);
 
-  const q=query(collection(db,'checklists'),
+  const q = query(
+    collection(db,'checklists'),
     where('placa','==',placa),
     where('dataChecklist','==',data)
   );
 
-  if(!(await getDocs(q)).empty) return alert('Checklist já feito hoje');
+  if(!(await getDocs(q)).empty) {
+    alert('Checklist já feito hoje');
+    return;
+  }
 
-  await addDoc(collection(db,'checklists'),{placa,dataChecklist:data});
-  await renderizarTabela();
+  await addDoc(collection(db,'checklists'), { placa, dataChecklist:data });
 };
 
 /* IMPORTAR EXCEL */
 excelInput.onchange = async e=>{
-  const wb=XLSX.read(await e.target.files[0].arrayBuffer());
-  const dados=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-  for(const d of dados) await addDoc(collection(db,'placas'),d);
+  const wb = XLSX.read(await e.target.files[0].arrayBuffer());
+  const dados = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+  for(const d of dados) await addDoc(collection(db,'placas'), d);
 };
 
 /* EXPORTAR EXCEL */
@@ -145,25 +149,27 @@ window.exportarExcel = async ()=>{
   XLSX.writeFile(wb,'frota.xlsx');
 };
 
-/* RENDERIZAÇÃO CENTRAL */
+/* RENDER ÚNICO */
 async function renderizarTabela(){
   tabela.innerHTML='';
-  const placasSnap=await getDocs(collection(db,'placas'));
-  const checkSnap=await getDocs(collection(db,'checklists'));
+
+  const placasSnap = await getDocs(collection(db,'placas'));
+  const checkSnap = await getDocs(collection(db,'checklists'));
 
   const mapa={};
   checkSnap.forEach(d=>{
-    const {placa,dataChecklist}=d.data();
-    const dt=new Date(dataChecklist);
-    if(!mapa[placa]||dt>mapa[placa]) mapa[placa]=dt;
+    const { placa, dataChecklist } = d.data();
+    const dt = new Date(dataChecklist);
+    if(!mapa[placa] || dt > mapa[placa]) mapa[placa] = dt;
   });
 
   let e=0,p=0,v=0;
 
   placasSnap.forEach(doc=>{
-    const {placa,tipo}=doc.data();
-    const ultima=mapa[placa];
-    let status='Pendente',cls='warning',dataTxt='-';
+    const { placa, tipo } = doc.data();
+    const ultima = mapa[placa];
+
+    let status='Pendente', cls='warning', dataTxt='-';
 
     if(ultima){
       const hoje=new Date();hoje.setHours(0,0,0,0);
@@ -171,31 +177,34 @@ async function renderizarTabela(){
       const dias=(hoje-ultima)/86400000;
       dataTxt=ultima.toLocaleDateString();
 
-      if(dias<30){status='Em dia';cls='ok';e++}
-      else if(dias===30){status='Pendente';cls='warning';p++}
-      else{status='Vencido';cls='danger';v++}
+      if(dias < 30){ status='Em dia'; cls='ok'; e++; }
+      else if(dias === 30){ status='Pendente'; cls='warning'; p++; }
+      else{ status='Vencido'; cls='danger'; v++; }
     } else p++;
 
     tabela.innerHTML+=`
-    <tr>
-      <td>${placa}</td>
-      <td class="center">${tipo}</td>
-      <td class="center">${dataTxt}</td>
-      <td class="center status ${cls}">${status}</td>
-      <td class="center">
-        <button onclick="salvarChecklist('${placa}')">Checklist</button>
-      </td>
-    </tr>`;
+      <tr>
+        <td>${placa}</td>
+        <td class="center">${tipo}</td>
+        <td class="center">${dataTxt}</td>
+        <td class="center status ${cls}">${status}</td>
+        <td class="center">
+          <button onclick="salvarChecklist('${placa}')">Checklist</button>
+        </td>
+      </tr>`;
   });
 
-  total.innerText=placasSnap.size;
-  emdia.innerText=e;
-  pendente.innerText=p;
-  vencido.innerText=v;
+  total.innerText = placasSnap.size;
+  emdia.innerText = e;
+  pendente.innerText = p;
+  vencido.innerText = v;
 }
 
-onSnapshot(collection(db,'placas'),renderizarTabela);
-onSnapshot(collection(db,'checklists'),renderizarTabela);
+/* ÚNICO LISTENER (ANTI-FANTASMA) */
+onSnapshot(collection(db,'checklists'), renderizarTabela);
+
+/* PRIMEIRA CARGA */
+renderizarTabela();
 </script>
 
 </body>
