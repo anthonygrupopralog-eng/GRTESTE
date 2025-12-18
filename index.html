@@ -62,6 +62,39 @@ button { padding:6px 10px; cursor:pointer }
 </table>
 
 <script type="module">
+  /* CADASTRAR PLACA MANUAL */
+window.cadastrarPlaca = async function () {
+  const placa = document.getElementById('placaInput').value.trim().toUpperCase();
+  const tipo = document.getElementById('tipoInput').value;
+
+  if (!placa || !tipo) {
+    alert('Preencha placa e tipo');
+    return;
+  }
+
+  // Evitar placa duplicada
+  const q = query(
+    collection(db, 'placas'),
+    where('placa', '==', placa)
+  );
+
+  const snap = await getDocs(q);
+  if (!snap.empty) {
+    alert('Placa já cadastrada');
+    return;
+  }
+
+  await addDoc(collection(db, 'placas'), {
+    placa,
+    tipo
+  });
+
+  document.getElementById('placaInput').value = '';
+  document.getElementById('tipoInput').value = '';
+
+  alert('Placa cadastrada com sucesso!');
+};
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import {
   getFirestore, collection, addDoc, getDocs,
