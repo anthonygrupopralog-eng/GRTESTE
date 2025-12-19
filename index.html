@@ -12,20 +12,20 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
 body{background:#f4f6f8;color:#333;padding:20px}
-.header{background:#1f2937;color:#fff;padding:20px;border-radius:10px;margin-bottom:20px}
-.dashboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:20px}
+.header{background:#1f2937;color:#fff;padding:20px;border-radius:10px;margin-bottom:20px;display:none;}
+.dashboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:20px;display:none;}
 .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 4px 8px rgba(0,0,0,.08)}
 .card span{font-size:26px;font-weight:bold}
 .card.total{border-left:6px solid #3b82f6}
 .card.ok{border-left:6px solid #22c55e}
 .card.warning{border-left:6px solid #facc15}
 .card.danger{border-left:6px solid #ef4444}
-.filters{background:#fff;padding:15px;border-radius:10px;display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+.filters{background:#fff;padding:15px;border-radius:10px;display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;display:none;}
 .filters input,.filters select{padding:10px;border-radius:8px;border:1px solid #d1d5db}
 button{padding:8px 18px;border:none;border-radius:10px;background:#111827;color:#fff;cursor:pointer}
 button:hover{background:#1f2937}
 button:disabled{opacity:.9}
-.table-container{background:#fff;padding:15px;border-radius:10px}
+.table-container{background:#fff;padding:15px;border-radius:10px;display:none;}
 table{width:100%;border-collapse:collapse}
 th,td{padding:12px;border-bottom:1px solid #e5e7eb}
 thead th{border-bottom:2px solid #e5e7eb}
@@ -34,13 +34,31 @@ thead th{border-bottom:2px solid #e5e7eb}
 .status.warning{color:#ca8a04;font-weight:bold}
 .status.danger{color:#dc2626;font-weight:bold}
 tbody tr:hover{background:#f9fafb}
+
+/* LOGIN */
+#loginContainer{max-width:400px;margin:0 auto 20px auto;padding:20px;background:#fff;border-radius:10px;}
+#loginContainer input{width:100%;padding:10px;margin-bottom:10px;border-radius:8px;border:1px solid #d1d5db;}
+#loginContainer button{width:100%;margin-top:5px;}
+#logoutBtn{background:#ef4444;}
+#logoutBtn:hover{background:#b91c1c;}
 </style>
 </head>
 
 <body>
 
+<!-- LOGIN -->
+<div id="loginContainer">
+  <h3>Login</h3>
+  <input type="email" id="emailInput" placeholder="Email">
+  <input type="password" id="senhaInput" placeholder="Senha">
+  <button id="btnLogin">Entrar</button>
+  <p id="loginMsg" style="color:red;margin-top:10px;"></p>
+</div>
+
+<!-- HEADER / DASHBOARD -->
 <div class="header">
   <h2>Checklist Mensal da Frota</h2>
+  <button id="logoutBtn" style="float:right;margin-top:-40px;">Sair</button>
 </div>
 
 <div class="dashboard">
@@ -88,6 +106,7 @@ import {
   getFirestore, collection, addDoc, getDocs,
   query, where, onSnapshot
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
 
 /* 🔥 FIREBASE */
 const firebaseConfig = {
@@ -98,6 +117,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
 
 /* 📌 ELEMENTOS */
 const placaInput = document.getElementById("placaInput");
@@ -110,195 +130,140 @@ const okEl = document.getElementById("ok");
 const pendenteEl = document.getElementById("pendente");
 const vencidoEl = document.getElementById("vencido");
 
+/* LOGIN */
+const loginContainer = document.getElementById("loginContainer");
+const emailInput = document.getElementById("emailInput");
+const senhaInput = document.getElementById("senhaInput");
+const btnLogin = document.getElementById("btnLogin");
+const loginMsg = document.getElementById("loginMsg");
+const logoutBtn = document.getElementById("logoutBtn");
+
+btnLogin.onclick = async () => {
+  const email = emailInput.value.trim();
+  const senha = senhaInput.value.trim();
+  if(!email || !senha){ loginMsg.textContent="Preencha email e senha"; return; }
+  try { await signInWithEmailAndPassword(auth,email,senha); loginMsg.textContent=""; }
+  catch(e){ console.error(e); loginMsg.textContent="Email ou senha inválidos"; }
+}
+
+logoutBtn.onclick = async () => { await signOut(auth); }
+
+/* MONITORAR LOGIN */
+onAuthStateChanged(auth,(user)=>{
+  if(user){
+    loginContainer.style.display="none";
+    document.querySelector(".header").style.display="block";
+    document.querySelector(".dashboard").style.display="grid";
+    document.querySelector(".filters").style.display="flex";
+    document.querySelector(".table-container").style.display="block";
+    agendarRender();
+  }else{
+    loginContainer.style.display="block";
+    document.querySelector(".header").style.display="none";
+    document.querySelector(".dashboard").style.display="none";
+    document.querySelector(".filters").style.display="none";
+    document.querySelector(".table-container").style.display="none";
+  }
+});
+
 /* =========================
    🔁 RENDER SEM DUPLICAR
-   (debounce + evita render concorrente)
 ========================= */
-let renderTimeout;
-let isRendering = false;
-let rerenderRequested = false;
-
-async function renderizarSeguro() {
-  if (isRendering) {
-    rerenderRequested = true;
-    return;
-  }
-  isRendering = true;
-  try {
-    await renderizar();
-  } finally {
-    isRendering = false;
-    if (rerenderRequested) {
-      rerenderRequested = false;
-      await renderizarSeguro();
-    }
+let renderTimeout, isRendering=false, rerenderRequested=false;
+async function renderizarSeguro(){
+  if(isRendering){ rerenderRequested=true; return; }
+  isRendering=true;
+  try{ await renderizar(); } finally{
+    isRendering=false;
+    if(rerenderRequested){ rerenderRequested=false; await renderizarSeguro(); }
   }
 }
-
-function agendarRender() {
-  clearTimeout(renderTimeout);
-  renderTimeout = setTimeout(renderizarSeguro, 120);
-}
+function agendarRender(){ clearTimeout(renderTimeout); renderTimeout=setTimeout(renderizarSeguro,120); }
 
 /* 🚗 CADASTRAR PLACA */
 btnCadastrar.onclick = async (e) => {
   e.preventDefault();
   const placa = placaInput.value.trim().toUpperCase();
   const tipo = tipoInput.value;
-
-  if (!placa || !tipo) {
-    alert("Preencha placa e tipo");
-    return;
-  }
-
-  const q = query(collection(db, "placas"), where("placa", "==", placa));
-  if (!(await getDocs(q)).empty) {
-    alert("Placa já cadastrada");
-    return;
-  }
-
-  await addDoc(collection(db, "placas"), { placa, tipo });
-
-  placaInput.value = "";
-  tipoInput.value = "";
-
-  // Atualiza na hora e mostra o alerta
+  if(!placa || !tipo){ alert("Preencha placa e tipo"); return; }
+  const q = query(collection(db,"placas"), where("placa","==",placa));
+  if(!(await getDocs(q)).empty){ alert("Placa já cadastrada"); return; }
+  await addDoc(collection(db,"placas"),{ placa,tipo });
+  placaInput.value=""; tipoInput.value="";
   await renderizarSeguro();
   alert("✅ Placa cadastrada com sucesso!");
   placaInput.focus();
 };
 
 /* 📆 STATUS */
-function calcularStatus(data) {
-  if (!data) return { texto: "Pendente", classe: "warning" };
-
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-
-  const check = new Date(data);
-  check.setHours(0, 0, 0, 0);
-
-  const diff = Math.floor((hoje - check) / (1000 * 60 * 60 * 24));
-
-  if (diff < 30) return { texto: "Em dia", classe: "ok" };
-  if (diff === 30) return { texto: "Pendente", classe: "warning" };
-  return { texto: "Vencido", classe: "danger" };
+function calcularStatus(data){
+  if(!data) return { texto:"Pendente",classe:"warning" };
+  const hoje=new Date(); hoje.setHours(0,0,0,0);
+  const check=new Date(data); check.setHours(0,0,0,0);
+  const diff=Math.floor((hoje-check)/(1000*60*60*24));
+  if(diff<30) return { texto:"Em dia",classe:"ok" };
+  if(diff===30) return { texto:"Pendente",classe:"warning" };
+  return { texto:"Vencido",classe:"danger" };
 }
 
 /* 🖥️ RENDER */
-async function renderizar() {
-  tabelaBody.innerHTML = "";
-
-  let total = 0, ok = 0, pend = 0, venc = 0;
-
-  const [placasSnap, checksSnap] = await Promise.all([
-    getDocs(collection(db, "placas")),
-    getDocs(collection(db, "checklists"))
-  ]);
-
-  const checks = {};
-  checksSnap.forEach((d) => {
-    const c = d.data();
-    if (!checks[c.placa] || checks[c.placa] < c.dataChecklist) {
-      checks[c.placa] = c.dataChecklist;
-    }
+async function renderizar(){
+  tabelaBody.innerHTML="";
+  let total=0, ok=0, pend=0, venc=0;
+  const [placasSnap, checksSnap]=await Promise.all([ getDocs(collection(db,"placas")), getDocs(collection(db,"checklists")) ]);
+  const checks={};
+  checksSnap.forEach(d=>{
+    const c=d.data();
+    if(!checks[c.placa] || checks[c.placa]<c.dataChecklist){ checks[c.placa]=c.dataChecklist; }
   });
-
-  const hojeISO = new Date().toISOString().slice(0, 10);
-
-  placasSnap.forEach((doc) => {
-    const { placa, tipo } = doc.data();
-    total++;
-
-    const data = checks[placa] || null;
-    const st = calcularStatus(data);
-
-    if (st.texto === "Em dia") ok++;
-    else if (st.texto === "Pendente") pend++;
-    else venc++;
-
-    const feitoHoje = data === hojeISO;
-
-    tabelaBody.innerHTML += `
+  const hojeISO=new Date().toISOString().slice(0,10);
+  placasSnap.forEach(doc=>{
+    const {placa,tipo}=doc.data(); total++;
+    const data=checks[placa]||null;
+    const st=calcularStatus(data);
+    if(st.texto==="Em dia") ok++; else if(st.texto==="Pendente") pend++; else venc++;
+    const feitoHoje=data===hojeISO;
+    tabelaBody.innerHTML+=`
       <tr>
         <td>${placa}</td>
         <td class="center">${tipo}</td>
-        <td class="center">${data ? data.split("-").reverse().join("/") : "-"}</td>
+        <td class="center">${data?data.split("-").reverse().join("/"):"-"}</td>
         <td class="center status ${st.classe}">${st.texto}</td>
         <td class="center">
           <button
-            ${feitoHoje ? 'disabled style="background:#16a34a;cursor:default;"' : ''}
-            onclick="salvarChecklist('${placa}', this)">
-            ${feitoHoje ? "✔ Feito" : "Checklist"}
+            ${feitoHoje?'disabled style="background:#16a34a;cursor:default;"':''}
+            onclick="salvarChecklist('${placa}',this)">
+            ${feitoHoje?"✔ Feito":"Checklist"}
           </button>
         </td>
       </tr>`;
   });
-
-  totalEl.innerText = total;
-  okEl.innerText = ok;
-  pendenteEl.innerText = pend;
-  vencidoEl.innerText = venc;
+  totalEl.innerText=total; okEl.innerText=ok; pendenteEl.innerText=pend; vencidoEl.innerText=venc;
 }
 
 /* ✅ CHECKLIST */
-window.salvarChecklist = async (placa, botao) => {
-  try {
-    botao.disabled = true;
-    botao.textContent = "Salvando...";
-    botao.style.background = "#f59e0b";
-    botao.style.cursor = "default";
-
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-    const data = hoje.toISOString().slice(0, 10);
-
-    const q = query(
-      collection(db, "checklists"),
-      where("placa", "==", placa),
-      where("dataChecklist", "==", data)
-    );
-
-    if (!(await getDocs(q)).empty) {
-      alert("Checklist já feito hoje");
-      await renderizarSeguro();
-      return;
-    }
-
-    await addDoc(collection(db, "checklists"), {
-      placa,
-      dataChecklist: data,
-    });
-
-    await renderizarSeguro(); // atualiza na hora
-
-    // feedback visual imediato
-    botao.textContent = "✔ Feito";
-    botao.style.background = "#16a34a";
-    botao.disabled = true;
-  } catch (e) {
-    console.error("Erro ao salvar checklist:", e);
-    alert("Erro ao salvar checklist!");
-    if (botao) {
-      botao.disabled = false;
-      botao.textContent = "Checklist";
-      botao.style.background = "#111827";
-      botao.style.cursor = "pointer";
-    }
-  }
+window.salvarChecklist=async (placa,botao)=>{
+  try{
+    botao.disabled=true; botao.textContent="Salvando..."; botao.style.background="#f59e0b"; botao.style.cursor="default";
+    const hoje=new Date(); hoje.setHours(0,0,0,0);
+    const data=hoje.toISOString().slice(0,10);
+    const q=query(collection(db,"checklists"), where("placa","==",placa), where("dataChecklist","==",data));
+    if(!(await getDocs(q)).empty){ alert("Checklist já feito hoje"); await renderizarSeguro(); return; }
+    await addDoc(collection(db,"checklists"),{ placa,dataChecklist:data });
+    await renderizarSeguro();
+    botao.textContent="✔ Feito"; botao.style.background="#16a34a"; botao.disabled=true;
+  }catch(e){ console.error("Erro ao salvar checklist:",e); alert("Erro ao salvar checklist!"); if(botao){ botao.disabled=false; botao.textContent="Checklist"; botao.style.background="#111827"; botao.style.cursor="pointer"; } }
 };
 
-/* 🔁 ATUALIZAÇÃO AUTOMÁTICA (placas + checklists) */
-onSnapshot(collection(db, "placas"), agendarRender);
-onSnapshot(collection(db, "checklists"), agendarRender);
+/* 🔁 ATUALIZAÇÃO AUTOMÁTICA */
+onSnapshot(collection(db,"placas"),agendarRender);
+onSnapshot(collection(db,"checklists"),agendarRender);
 
 // primeira carga
 agendarRender();
 
-/* evita erro se exportarExcel não existir ainda */
-window.exportarExcel = window.exportarExcel || function () {
-  alert("Função exportarExcel() ainda não foi implementada.");
-};
+// exportarExcel placeholder
+window.exportarExcel=window.exportarExcel||function(){alert("Função exportarExcel() ainda não foi implementada.");};
 </script>
 </body>
 </html>
