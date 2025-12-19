@@ -12,7 +12,10 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
 body{background:#f4f6f8;color:#333;padding:20px}
-.header{background:#1f2937;color:#fff;padding:20px;border-radius:10px;margin-bottom:20px;display:none;}
+.header{background:#1f2937;color:#fff;padding:20px;border-radius:10px;margin-bottom:20px;display:none;position:relative;}
+.header h2{display:inline-block;}
+#logoutBtn{position:absolute;top:20px;right:20px;background:#ef4444;}
+#logoutBtn:hover{background:#b91c1c;}
 .dashboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-bottom:20px;display:none;}
 .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 4px 8px rgba(0,0,0,.08)}
 .card span{font-size:26px;font-weight:bold}
@@ -39,26 +42,31 @@ tbody tr:hover{background:#f9fafb}
 #loginContainer{max-width:400px;margin:0 auto 20px auto;padding:20px;background:#fff;border-radius:10px;}
 #loginContainer input{width:100%;padding:10px;margin-bottom:10px;border-radius:8px;border:1px solid #d1d5db;}
 #loginContainer button{width:100%;margin-top:5px;}
-#logoutBtn{background:#ef4444;}
-#logoutBtn:hover{background:#b91c1c;}
+#loginContainer h3{text-align:center;margin-bottom:10px;}
+#loginMsg{color:red;margin-top:10px;text-align:center;}
 </style>
 </head>
 
 <body>
 
-<!-- LOGIN -->
+<!-- LOGIN E REGISTRO -->
 <div id="loginContainer">
   <h3>Login</h3>
-  <input type="email" id="emailInput" placeholder="Email da empresa @grupopralog.com.br">
-  <input type="password" id="senhaInput" placeholder="Senha 123456">
+  <input type="email" id="emailInput" placeholder="Email">
+  <input type="password" id="senhaInput" placeholder="Senha">
   <button id="btnLogin">Entrar</button>
-  <p id="loginMsg" style="color:red;margin-top:10px;"></p>
+  <p style="text-align:center;margin:10px 0;">ou</p>
+  <h3>Registrar</h3>
+  <input type="email" id="emailReg" placeholder="Email">
+  <input type="password" id="senhaReg" placeholder="Senha">
+  <button id="btnRegister">Registrar</button>
+  <p id="loginMsg"></p>
 </div>
 
 <!-- HEADER / DASHBOARD -->
 <div class="header">
   <h2>Checklist Mensal da Frota</h2>
-  <button id="logoutBtn" style="float:right;margin-top:-40px;">Sair</button>
+  <button id="logoutBtn">Sair</button>
 </div>
 
 <div class="dashboard">
@@ -102,11 +110,8 @@ tbody tr:hover{background:#f9fafb}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
-import {
-  getFirestore, collection, addDoc, getDocs,
-  query, where, onSnapshot
-} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+import { getFirestore, collection, addDoc, getDocs, query, where, onSnapshot, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
 
 /* 🔥 FIREBASE */
 const firebaseConfig = {
@@ -114,7 +119,6 @@ const firebaseConfig = {
   authDomain: "check-list-d32b1.firebaseapp.com",
   projectId: "check-list-d32b1",
 };
-
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
@@ -135,27 +139,67 @@ const loginContainer = document.getElementById("loginContainer");
 const emailInput = document.getElementById("emailInput");
 const senhaInput = document.getElementById("senhaInput");
 const btnLogin = document.getElementById("btnLogin");
+const emailReg = document.getElementById("emailReg");
+const senhaReg = document.getElementById("senhaReg");
+const btnRegister = document.getElementById("btnRegister");
 const loginMsg = document.getElementById("loginMsg");
 const logoutBtn = document.getElementById("logoutBtn");
 
+/* LOGIN */
 btnLogin.onclick = async () => {
   const email = emailInput.value.trim();
   const senha = senhaInput.value.trim();
-  if(!email || !senha){ loginMsg.textContent="Preencha email e senha"; return; }
-  try { await signInWithEmailAndPassword(auth,email,senha); loginMsg.textContent=""; }
-  catch(e){ console.error(e); loginMsg.textContent="Email ou senha inválidos"; }
+  if(!email||!senha){ loginMsg.style.color="red"; loginMsg.textContent="Preencha email e senha"; return; }
+  try{
+    await signInWithEmailAndPassword(auth,email,senha);
+    loginMsg.textContent="";
+  }catch(e){
+    console.error(e);
+    if(e.code==="auth/user-not-found") loginMsg.textContent="Usuário não encontrado";
+    else if(e.code==="auth/wrong-password") loginMsg.textContent="Senha incorreta";
+    else loginMsg.textContent="Erro ao entrar";
+    loginMsg.style.color="red";
+  }
 }
 
+/* REGISTRO */
+btnRegister.onclick = async () => {
+  const email = emailReg.value.trim();
+  const senha = senhaReg.value.trim();
+  if(!email||!senha){ loginMsg.style.color="red"; loginMsg.textContent="Preencha email e senha"; return; }
+  try{
+    const userCredential = await createUserWithEmailAndPassword(auth,email,senha);
+    const user = userCredential.user;
+    // criar doc no Firestore com role
+    await setDoc(doc(db,"users",user.uid),{ role:"user" });
+    loginMsg.style.color="green"; loginMsg.textContent="Usuário registrado! Faça login.";
+  }catch(e){
+    console.error(e);
+    if(e.code==="auth/email-already-in-use") loginMsg.textContent="Email já cadastrado";
+    else if(e.code==="auth/weak-password") loginMsg.textContent="Senha muito fraca";
+    else loginMsg.textContent="Erro ao registrar usuário";
+    loginMsg.style.color="red";
+  }
+}
+
+/* LOGOUT */
 logoutBtn.onclick = async () => { await signOut(auth); }
 
-/* MONITORAR LOGIN */
-onAuthStateChanged(auth,(user)=>{
+/* MONITORAR LOGIN E PERMISSÕES */
+onAuthStateChanged(auth, async (user)=>{
   if(user){
     loginContainer.style.display="none";
     document.querySelector(".header").style.display="block";
     document.querySelector(".dashboard").style.display="grid";
     document.querySelector(".filters").style.display="flex";
     document.querySelector(".table-container").style.display="block";
+
+    const userDoc = await getDoc(doc(db,"users",user.uid));
+    const role = userDoc.exists()?userDoc.data().role:"user";
+
+    if(role!=="admin") btnCadastrar.style.display="none";
+    else btnCadastrar.style.display="inline-block";
+
     agendarRender();
   }else{
     loginContainer.style.display="block";
@@ -169,33 +213,32 @@ onAuthStateChanged(auth,(user)=>{
 /* =========================
    🔁 RENDER SEM DUPLICAR
 ========================= */
-let renderTimeout, isRendering=false, rerenderRequested=false;
+let renderTimeout,isRendering=false,rerenderRequested=false;
 async function renderizarSeguro(){
   if(isRendering){ rerenderRequested=true; return; }
   isRendering=true;
-  try{ await renderizar(); } finally{
+  try{ await renderizar(); }finally{
     isRendering=false;
     if(rerenderRequested){ rerenderRequested=false; await renderizarSeguro(); }
   }
 }
 function agendarRender(){ clearTimeout(renderTimeout); renderTimeout=setTimeout(renderizarSeguro,120); }
 
-/* 🚗 CADASTRAR PLACA */
-btnCadastrar.onclick = async (e) => {
+/* CADASTRO DE PLACAS */
+btnCadastrar.onclick = async (e)=>{
   e.preventDefault();
   const placa = placaInput.value.trim().toUpperCase();
   const tipo = tipoInput.value;
-  if(!placa || !tipo){ alert("Preencha placa e tipo"); return; }
-  const q = query(collection(db,"placas"), where("placa","==",placa));
+  if(!placa||!tipo){ alert("Preencha placa e tipo"); return; }
+  const q = query(collection(db,"placas"),where("placa","==",placa));
   if(!(await getDocs(q)).empty){ alert("Placa já cadastrada"); return; }
-  await addDoc(collection(db,"placas"),{ placa,tipo });
+  await addDoc(collection(db,"placas"),{placa,tipo});
   placaInput.value=""; tipoInput.value="";
   await renderizarSeguro();
   alert("✅ Placa cadastrada com sucesso!");
-  placaInput.focus();
-};
+}
 
-/* 📆 STATUS */
+/* STATUS CHECKLIST */
 function calcularStatus(data){
   if(!data) return { texto:"Pendente",classe:"warning" };
   const hoje=new Date(); hoje.setHours(0,0,0,0);
@@ -206,15 +249,15 @@ function calcularStatus(data){
   return { texto:"Vencido",classe:"danger" };
 }
 
-/* 🖥️ RENDER */
+/* RENDER TABELA */
 async function renderizar(){
   tabelaBody.innerHTML="";
   let total=0, ok=0, pend=0, venc=0;
-  const [placasSnap, checksSnap]=await Promise.all([ getDocs(collection(db,"placas")), getDocs(collection(db,"checklists")) ]);
+  const [placasSnap, checksSnap]=await Promise.all([getDocs(collection(db,"placas")),getDocs(collection(db,"checklists"))]);
   const checks={};
   checksSnap.forEach(d=>{
     const c=d.data();
-    if(!checks[c.placa] || checks[c.placa]<c.dataChecklist){ checks[c.placa]=c.dataChecklist; }
+    if(!checks[c.placa]||checks[c.placa]<c.dataChecklist){ checks[c.placa]=c.dataChecklist; }
   });
   const hojeISO=new Date().toISOString().slice(0,10);
   placasSnap.forEach(doc=>{
@@ -222,7 +265,7 @@ async function renderizar(){
     const data=checks[placa]||null;
     const st=calcularStatus(data);
     if(st.texto==="Em dia") ok++; else if(st.texto==="Pendente") pend++; else venc++;
-    const feitoHoje=data===hojeISO;
+    const feitoHoje = data===hojeISO;
     tabelaBody.innerHTML+=`
       <tr>
         <td>${placa}</td>
@@ -230,9 +273,7 @@ async function renderizar(){
         <td class="center">${data?data.split("-").reverse().join("/"):"-"}</td>
         <td class="center status ${st.classe}">${st.texto}</td>
         <td class="center">
-          <button
-            ${feitoHoje?'disabled style="background:#16a34a;cursor:default;"':''}
-            onclick="salvarChecklist('${placa}',this)">
+          <button ${feitoHoje?'disabled style="background:#16a34a;cursor:default;"':''} onclick="salvarChecklist('${placa}',this)">
             ${feitoHoje?"✔ Feito":"Checklist"}
           </button>
         </td>
@@ -241,28 +282,26 @@ async function renderizar(){
   totalEl.innerText=total; okEl.innerText=ok; pendenteEl.innerText=pend; vencidoEl.innerText=venc;
 }
 
-/* ✅ CHECKLIST */
+/* SALVAR CHECKLIST */
 window.salvarChecklist=async (placa,botao)=>{
   try{
     botao.disabled=true; botao.textContent="Salvando..."; botao.style.background="#f59e0b"; botao.style.cursor="default";
     const hoje=new Date(); hoje.setHours(0,0,0,0);
     const data=hoje.toISOString().slice(0,10);
-    const q=query(collection(db,"checklists"), where("placa","==",placa), where("dataChecklist","==",data));
+    const q=query(collection(db,"checklists"),where("placa","==",placa),where("dataChecklist","==",data));
     if(!(await getDocs(q)).empty){ alert("Checklist já feito hoje"); await renderizarSeguro(); return; }
     await addDoc(collection(db,"checklists"),{ placa,dataChecklist:data });
     await renderizarSeguro();
     botao.textContent="✔ Feito"; botao.style.background="#16a34a"; botao.disabled=true;
-  }catch(e){ console.error("Erro ao salvar checklist:",e); alert("Erro ao salvar checklist!"); if(botao){ botao.disabled=false; botao.textContent="Checklist"; botao.style.background="#111827"; botao.style.cursor="pointer"; } }
-};
+  }catch(e){ console.error(e); alert("Erro ao salvar checklist!"); if(botao){ botao.disabled=false; botao.textContent="Checklist"; botao.style.background="#111827"; botao.style.cursor="pointer"; } }
+}
 
-/* 🔁 ATUALIZAÇÃO AUTOMÁTICA */
+/* ATUALIZAÇÃO AUTOMÁTICA */
 onSnapshot(collection(db,"placas"),agendarRender);
 onSnapshot(collection(db,"checklists"),agendarRender);
-
-// primeira carga
 agendarRender();
 
-// exportarExcel placeholder
+/* exportarExcel placeholder */
 window.exportarExcel=window.exportarExcel||function(){alert("Função exportarExcel() ainda não foi implementada.");};
 </script>
 </body>
