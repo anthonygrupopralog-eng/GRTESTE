@@ -36,7 +36,6 @@ thead th{border-bottom:2px solid #e5e7eb}
 .status.warning{color:#ca8a04;font-weight:bold}
 .status.danger{color:#dc2626;font-weight:bold}
 tbody tr:hover{background:#f9fafb}
-
 /* LOGIN */
 #loginContainer{max-width:400px;margin:0 auto 20px auto;padding:20px;background:#fff;border-radius:10px;}
 #loginContainer input{width:100%;padding:10px;margin-bottom:10px;border-radius:8px;border:1px solid #d1d5db;}
@@ -45,9 +44,7 @@ tbody tr:hover{background:#f9fafb}
 #loginMsg{color:red;margin-top:10px;text-align:center;}
 </style>
 </head>
-
 <body>
-
 <!-- LOGIN E REGISTRO -->
 <div id="loginContainer">
   <h3>Login</h3>
@@ -61,20 +58,17 @@ tbody tr:hover{background:#f9fafb}
   <button id="btnRegister">Registrar</button>
   <p id="loginMsg"></p>
 </div>
-
 <!-- HEADER / DASHBOARD -->
 <div class="header">
   <h2>Checklist Mensal da Frota</h2>
   <button id="logoutBtn">Sair</button>
 </div>
-
 <div class="dashboard">
   <div class="card total">Total<br><span id="total">0</span></div>
   <div class="card ok">Em dia<br><span id="ok">0</span></div>
   <div class="card warning">Pendentes<br><span id="pendente">0</span></div>
   <div class="card danger">Vencidos<br><span id="vencido">0</span></div>
 </div>
-
 <div class="filters">
   <input id="placaInput" placeholder="Placa">
   <select id="tipoInput">
@@ -87,11 +81,9 @@ tbody tr:hover{background:#f9fafb}
     <option>Cavalo - Pety</option>
   </select>
   <button id="btnCadastrar">Cadastrar</button>
-
   <input type="file" id="excelInput">
   <button onclick="exportarExcel()">Exportar Excel</button>
 </div>
-
 <div class="table-container">
   <table>
     <thead>
